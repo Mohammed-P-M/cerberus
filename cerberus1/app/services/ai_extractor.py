@@ -64,7 +64,7 @@ class AIExtractor:
         bank_accounts = []
         seen_accts = set()
         ifsc_match = re.search(r"\b([A-Z]{4}0[A-Z0-9]{6})\b", text)
-        ifsc_code = ifsc_match.group(1) if ifsc_match else "SBIN0001234"
+        ifsc_code = ifsc_match.group(1) if ifsc_match else None
         
         acct_matches = re.finditer(r"(?:A/C|Account(?:\s*No\.?)?|Acc)\s*(?:No\.?)?\s*[:\-]?\s*([0-9]{9,18})", text, re.IGNORECASE)
         for m in acct_matches:
@@ -74,7 +74,7 @@ class AIExtractor:
                 bank_accounts.append({
                     "account_number": acct,
                     "ifsc": ifsc_code,
-                    "bank_name": "State Bank of India" if "SBIN" in ifsc_code else "Commercial Bank"
+                    "bank_name": "State Bank of India" if ifsc_code and "SBIN" in ifsc_code else None
                 })
 
         # 6. Person extraction with roles
@@ -137,53 +137,54 @@ class AIExtractor:
             events.append({
                 "event_type": "SUSPICIOUS_TRANSACTION",
                 "description": "Financial fraud or unauthorized fund transfer reported in FIR",
-                "occurred_at": "2026-03-01T10:00:00"
+                "occurred_at": None
             })
         if phones:
             events.append({
                 "event_type": "FRAUD_CALL",
                 "description": f"Communication initiated using suspected mobile number {phones[0]['value']}",
-                "occurred_at": "2026-03-01T09:30:00"
+                "occurred_at": None
             })
 
         # 10. Relationships
         relationships = []
-        primary_person = persons[0]["name"] if persons else "Rahul Kumar"
-        for p in phones:
-            relationships.append({
-                "source_type": "Person",
-                "source_name": primary_person,
-                "relationship": "OWNS_PHONE",
-                "target_type": "Phone",
-                "target_value": p["value"]
-            })
-        for v in vehicles:
-            relationships.append({
-                "source_type": "Person",
-                "source_name": primary_person,
-                "relationship": "OPERATES_VEHICLE",
-                "target_type": "Vehicle",
-                "target_value": v["registration"]
-            })
-        for u in upis:
-            relationships.append({
-                "source_type": "Person",
-                "source_name": primary_person,
-                "relationship": "USES_UPI",
-                "target_type": "UPI",
-                "target_value": u["value"]
-            })
-        for b in bank_accounts:
-            relationships.append({
-                "source_type": "Person",
-                "source_name": primary_person,
-                "relationship": "HOLDS_ACCOUNT",
-                "target_type": "BankAccount",
-                "target_value": b["account_number"]
-            })
+        primary_person = persons[0]["name"] if persons else None
+        if primary_person:
+            for p in phones:
+                relationships.append({
+                    "source_type": "Person",
+                    "source_name": primary_person,
+                    "relationship": "OWNS_PHONE",
+                    "target_type": "Phone",
+                    "target_value": p["value"]
+                })
+            for v in vehicles:
+                relationships.append({
+                    "source_type": "Person",
+                    "source_name": primary_person,
+                    "relationship": "OPERATES_VEHICLE",
+                    "target_type": "Vehicle",
+                    "target_value": v["registration"]
+                })
+            for u in upis:
+                relationships.append({
+                    "source_type": "Person",
+                    "source_name": primary_person,
+                    "relationship": "USES_UPI",
+                    "target_type": "UPI",
+                    "target_value": u["value"]
+                })
+            for b in bank_accounts:
+                relationships.append({
+                    "source_type": "Person",
+                    "source_name": primary_person,
+                    "relationship": "HOLDS_ACCOUNT",
+                    "target_type": "BankAccount",
+                    "target_value": b["account_number"]
+                })
 
         # Category
-        crime_cat = "FINANCIAL_CRIME"
+        crime_cat = "UNKNOWN"
         if re.search(r"(?:ransomware|phishing|malware|hacking)", text, re.IGNORECASE):
             crime_cat = "CYBER_ATTACK"
         elif re.search(r"(?:identity theft|impersonation)", text, re.IGNORECASE):

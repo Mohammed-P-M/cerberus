@@ -74,7 +74,7 @@ interface InvestigationContextType {
   // Documents & Processing Status
   documents: DocumentStatus[];
   reloadDocuments: () => Promise<void>;
-  uploadDocument: (file: File) => Promise<void>;
+  uploadDocument: (file: File, caseIdOverride?: string) => Promise<void>;
 
   // Extraction Review
   extractions: ExtractionCandidate[];
@@ -261,10 +261,34 @@ export const InvestigationProvider: React.FC<{ children: React.ReactNode }> = ({
     setDocuments(docs);
   };
 
-  const uploadDocument = async (file: File) => {
-    if (!selectedCase) return;
-    const newDoc = await apiService.uploadDocument(selectedCase.id, file);
+  const uploadDocument = async (file: File, caseIdOverride?: string) => {
+    // The upload view gets the case id from the URL. Do not silently fail when
+    // the global selectedCase state has not finished loading yet.
+    const caseId = caseIdOverride || selectedCase?.id;
+    if (!caseId) {
+      throw new Error('No case is selected. Open the document upload page from a valid case.');
+    }
+
+    const newDoc = await apiService.uploadDocument(caseId, file);
     setDocuments(prev => [newDoc, ...prev]);
+
+    // Poll the real backend status while OCR/NLP runs in the background.
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const docs = await apiService.getCaseDocuments(caseId);
+      setDocuments(docs);
+      const current = docs.find(d => d.id === newDoc.id);
+      if (!current) continue;
+      if (current.status === 'COMPLETED' || current.status === 'FAILED') {
+        if (current.status === 'FAILED') {
+          throw new Error(current.errorMessage || 'Document processing failed');
+        }
+        const exts = await apiService.getExtractions(caseId);
+        setExtractions(exts);
+        return;
+      }
+    }
+    throw new Error('Document processing timed out. Check document status for details.');
   };
 
   // Node & Edge selection

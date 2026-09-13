@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useInvestigation } from '../context/InvestigationContext';
 import { ExtractionCandidate, EntityType } from '../types';
+import { apiService } from '../services/api';
 import {
   FileCheck,
   CheckCircle2,
@@ -29,11 +30,14 @@ export const ExtractionReviewView: React.FC = () => {
   const {
     selectedCase,
     extractions,
+    documents,
     handleExtractionAction,
     currentUser
   } = useInvestigation();
 
-  const [selectedDocId, setSelectedDocId] = useState<string>('doc-001');
+  const [selectedDocId, setSelectedDocId] = useState<string>('');
+  const [documentText, setDocumentText] = useState<string>('');
+  const [documentTextStatus, setDocumentTextStatus] = useState<string>('');
   const [selectedCandidate, setSelectedCandidate] = useState<ExtractionCandidate | null>(
     extractions[0] || null
   );
@@ -76,65 +80,39 @@ export const ExtractionReviewView: React.FC = () => {
     setEditingCandidateId(null);
   };
 
-  // Sample original document text excerpts for the split view
-  const documentTexts: Record<string, { title: string; content: string }> = {
-    'doc-001': {
-      title: 'FIR_284_2024_Cyberabad_Complaint.pdf (Page 1-3)',
-      content: `FIRST INFORMATION REPORT (Under Section 154 Cr.P.C)
-Police Station: Cyber Crime Police Station, Cyberabad
-FIR No: 284/2024 | Date & Time of FIR: 12-04-2024 10:15 Hrs
-Acts & Sections: Section 66C, 66D IT Act 2000 & Sections 419, 420 IPC
-
-1. Complainant / Informant Details:
-   Name: Dr. K. Ramanathan, Aged 58 years, Senior Physician.
-   Residence: Jubilee Hills, Hyderabad. Mobile: +91 94401 23456.
-
-2. Statement of Complaint:
-   "On 09-04-2024 at approximately 11:20 AM, I received an urgent incoming voice call from mobile number +91 98765 43210. The caller identified himself as bank compliance officer Vicky @ Vikram Sharma and instructed me to verify eSIM registration request. He warned that failure to comply would result in immediate blocking of mobile network connectivity.
-   
-   Under panic, I shared a 32-digit authorization code received via SMS. Within 15 minutes, cellular signal vanished completely from my handset. Upon contacting customer care from an alternate line, I discovered that an unauthorized eSIM swap had been processed onto another handset.
-   
-   Subsequent checking of my State Bank of India NetBanking account revealed two fraudulent IMPS transfers debited within 7 minutes:
-   - Txn Ref 410928198271: Amount INR 9,50,000 transferred to HDFC Bank A/c 5010049281726 in name of Ramesh Yadav.
-   - Txn Ref 410928198902: Amount INR 8,50,000 to same beneficiary account.
-   
-   A third transaction routed INR 8,50,000 through an intermediary merchant gateway entity named Star Pay Fintech Solutions Pvt Ltd. Total loss incurred is INR 48,50,000."`
-    },
-    'doc-002': {
-      title: 'CDR_Analysis_9876543210_Jamtara_Tower.xlsx (Triangulation Log)',
-      content: `TELECOM LIMS CDR GATEWAY FORENSIC EXTRACT
-Target MSISDN: +91 98765 43210
-Device Hardware IMEI: 864209041234567 (OnePlus Nord 2)
-IMSI: 404450918271928
-
-[Log Entry 09-04-2024 11:23:10 UTC+5:30]
-Outbound Voice Call to +91 94401 23456 (Dr. Ramanathan).
-Duration: 420 Seconds (07 min 00 sec).
-Connected Base Transceiver Station: Tower ID JMT-042 (Karmatar Block).
-Antenna Azimuth: 120 Degrees (Sector 2).
-GPS Coordinates: 24.1678° N, 86.8421° E.
-
-[Log Entry 09-04-2024 11:34:22 UTC+5:30]
-Over-the-air eSIM Profile download packet initiated from Cell Tower ID JMT-042.
-Handset TAC Code 86420904 confirmed active in multiple NCRP complaint tickets.`
-    },
-    'doc-003': {
-      title: 'HDFC_Mule_Account_Statement_5010049281726.csv (KYC & Ledger)',
-      content: `HDFC BANK LTD - STATEMENT OF ACCOUNT
-Account No: 5010049281726 | IFSC: HDFC0001298
-Account Holder Name: Ramesh Yadav s/o Ramkishan Yadav
-Registered Address: Village Sarath, District Deoghar, Jharkhand - 814149.
-Date of Account Opening: 15-01-2024
-
-Transaction Records:
-09-04-2024 12:05:14 | IMPS CR / 410928198271 / Dr K Ramanathan | +INR 9,50,000.00
-09-04-2024 12:12:02 | IMPS CR / 410928198902 / Dr K Ramanathan | +INR 8,50,000.00
-09-04-2024 13:40:22 | NEFT DR / STARPAY99214 / Star Pay Fintech | -INR 8,50,000.00
-09-04-2024 14:35:10 | ATM WDL / Shakarpur Axis ATM Delhi | -INR 2,50,000.00`
+  useEffect(() => {
+    if (!selectedDocId && documents.length > 0) {
+      setSelectedDocId(documents[0].id);
     }
-  };
+  }, [documents, selectedDocId]);
 
-  const currentDoc = documentTexts[selectedDocId] || documentTexts['doc-001'];
+  useEffect(() => {
+    let cancelled = false;
+    const loadText = async () => {
+      if (!selectedDocId) {
+        setDocumentText('');
+        return;
+      }
+      try {
+        setDocumentTextStatus('Loading extracted document text...');
+        const result = await apiService.getDocumentText(selectedDocId);
+        if (!cancelled) {
+          setDocumentText(result.text || 'No text has been extracted yet.');
+          setDocumentTextStatus(result.status || '');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDocumentText('Unable to load the extracted text from the backend.');
+          setDocumentTextStatus(error instanceof Error ? error.message : 'Failed to load document text');
+        }
+      }
+    };
+    loadText();
+    return () => { cancelled = true; };
+  }, [selectedDocId]);
+
+  const selectedDocument = documents.find(d => d.id === selectedDocId);
+
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6 text-slate-200">
@@ -183,9 +161,11 @@ Transaction Records:
             onChange={(e) => setSelectedDocId(e.target.value)}
             className="bg-slate-950 text-xs font-mono text-slate-200 px-3 py-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500 cursor-pointer"
           >
-            <option value="doc-001">FIR Complaint Copy (FIR_284_2024.pdf)</option>
-            <option value="doc-002">CDR Triangulation Sheet (CDR_Analysis.xlsx)</option>
-            <option value="doc-003">Bank Mule Statement (HDFC_5010049281726.csv)</option>
+            {documents.length === 0 ? (
+              <option value="">No uploaded documents</option>
+            ) : documents.map((doc) => (
+              <option key={doc.id} value={doc.id}>{doc.fileName}</option>
+            ))}
           </select>
         </div>
 
@@ -224,16 +204,16 @@ Transaction Records:
           </div>
 
           <div className="text-xs font-mono text-cyan-400 py-2">
-            Viewing: {currentDoc.title}
+            Viewing: {selectedDocument?.fileName || 'No document selected'}
           </div>
 
           <div className="flex-1 overflow-y-auto bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs leading-relaxed whitespace-pre-wrap text-slate-300 select-text">
-            {currentDoc.content}
+            {documentText}
           </div>
 
           <div className="pt-3 text-[10px] text-slate-500 font-mono flex items-center justify-between">
-            <span>OCR Confidence: 99.4%</span>
-            <span>Cryptographic Checksum SHA-256 Valid</span>
+            <span>Backend status: {documentTextStatus || '—'}</span>
+            <span>{selectedDocument?.fileSize || ''}</span>
           </div>
         </div>
 

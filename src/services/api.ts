@@ -419,13 +419,10 @@ export const apiService = {
       const res = await fetch(`${API_BASE_URL}/cases`);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data.map(mapBackendCase);
-      }
-      return [...store.cases];
+      if (!Array.isArray(data)) throw new Error('Invalid cases response');
+      return data.map(mapBackendCase);
     } catch (err) {
-      console.warn('Live API unavailable for getCases, falling back to mock dataset:', err);
-      return [...store.cases];
+      throw err instanceof Error ? err : new Error('Failed to load cases from backend');
     }
   },
 
@@ -455,8 +452,7 @@ export const apiService = {
       const data = await res.json();
       return mapBackendDocument(data, '');
     } catch (err) {
-      console.warn(`Live API getDocumentStatus(${docId}) fallback:`, err);
-      return store.documents.find(d => d.id === docId);
+      throw err instanceof Error ? err : new Error('Failed to load document status');
     }
   },
 
@@ -468,13 +464,10 @@ export const apiService = {
       const res = await fetch(`${API_BASE_URL}/cases/${caseId}/documents`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data.map((d: any) => mapBackendDocument(d, caseId));
-      }
-      return store.documents.filter(d => d.caseId === caseId);
+      if (!Array.isArray(data)) throw new Error('Invalid documents response');
+      return data.map((d: any) => mapBackendDocument(d, caseId));
     } catch (err) {
-      console.warn(`Live API getCaseDocuments(${caseId}) fallback:`, err);
-      return store.documents.filter(d => d.caseId === caseId);
+      throw err instanceof Error ? err : new Error('Failed to load case documents');
     }
   },
 
@@ -497,29 +490,39 @@ export const apiService = {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE_URL}/cases/${caseId}/upload`, {
+      const res = await fetch(`${API_BASE_URL}/cases/${encodeURIComponent(caseId)}/documents`, {
         method: 'POST',
         body: formData
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text();
+        let detail = body || res.statusText || `HTTP ${res.status}`;
+        try {
+          const parsed = JSON.parse(body);
+          detail = parsed.detail || parsed.message || detail;
+        } catch {
+          // Keep the plain-text response.
+        }
+        throw new Error(`Document upload failed (HTTP ${res.status}): ${detail}`);
+      }
       const data = await res.json();
       return mapBackendDocument(data, caseId);
     } catch (err) {
-      console.warn('Live upload failed, falling back to local ingestion simulation:', err);
-      const newDoc: DocumentStatus = {
-        id: `doc-${Date.now()}`,
-        caseId,
-        fileName: file.name,
-        fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        uploadTimestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
-        status: 'COMPLETED',
-        progressPercentage: 100,
-        pageCount: 2,
-        extractedCandidateCount: 4
-      };
-      store.documents.unshift(newDoc);
-      return newDoc;
+      if (err instanceof Error) throw err;
+      throw new Error('Document upload failed');
     }
+  },
+
+  async getDocumentText(documentId: string): Promise<{ documentId: string; filename: string; status: string; errorMessage?: string; text: string; chunks: Array<{ id: string; page_number: number; chunk_index: number; text_content: string }> }> {
+    if (isMockApiEnabled) {
+      return { documentId, filename: 'Mock document', status: 'EXTRACTED', text: '', chunks: [] };
+    }
+    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/text`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(body || `HTTP ${res.status}`);
+    }
+    return await res.json();
   },
 
   // 3. Extraction Review
@@ -531,13 +534,10 @@ export const apiService = {
       const res = await fetch(`${API_BASE_URL}/cases/${caseId}/extractions`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-      return store.extractions.filter(e => e.caseId === caseId);
+      if (!Array.isArray(data)) throw new Error('Invalid extractions response');
+      return data;
     } catch (err) {
-      console.warn(`Live API getExtractions(${caseId}) fallback:`, err);
-      return store.extractions.filter(e => e.caseId === caseId);
+      throw err instanceof Error ? err : new Error('Failed to load extractions');
     }
   },
 

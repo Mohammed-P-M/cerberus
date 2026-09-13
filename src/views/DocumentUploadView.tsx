@@ -19,6 +19,7 @@ export const DocumentUploadView: React.FC = () => {
   const { selectedCase, documents, uploadDocument } = useInvestigation();
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -36,8 +37,18 @@ export const DocumentUploadView: React.FC = () => {
 
   const handleFileUpload = async (file: File) => {
     setUploading(true);
+    setUploadError(null);
+
+    if (!id) {
+      setUploadError('No case ID was found in the URL.');
+      setUploading(false);
+      return;
+    }
+
     try {
-      await uploadDocument(file);
+      await uploadDocument(file, id);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Document upload or processing failed');
     } finally {
       setUploading(false);
     }
@@ -94,6 +105,7 @@ export const DocumentUploadView: React.FC = () => {
             </span>
             <input
               type="file"
+              accept=".pdf,.doc,.docx,.xlsx,.xlsm,.csv,.json,.txt,.md,.log,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
               onChange={handleFileSelect}
               disabled={uploading}
               className="hidden"
@@ -114,6 +126,13 @@ export const DocumentUploadView: React.FC = () => {
         </div>
       </div>
 
+      {uploadError && (
+        <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/60 text-sm text-rose-300">
+          <strong className="block text-rose-200 mb-1">Upload / processing failed</strong>
+          {uploadError}
+        </div>
+      )}
+
       {/* Pipeline Status Tracker */}
       <div className="bg-slate-900/80 rounded-2xl p-6 border border-slate-800 shadow-md space-y-4">
         <div className="flex items-center justify-between">
@@ -129,6 +148,7 @@ export const DocumentUploadView: React.FC = () => {
         <div className="space-y-3">
           {documents.map((doc) => {
             const isCompleted = doc.status === 'COMPLETED';
+            const isFailed = doc.status === 'FAILED';
 
             return (
               <div
@@ -152,6 +172,8 @@ export const DocumentUploadView: React.FC = () => {
                     className={`text-[10px] font-mono px-2.5 py-1 rounded font-bold ${
                       isCompleted
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : isFailed
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                         : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse'
                     }`}
                   >
@@ -174,6 +196,12 @@ export const DocumentUploadView: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {isFailed && doc.errorMessage && (
+                  <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-800/60 text-[11px] text-rose-300">
+                    <strong>Processing failed:</strong> {doc.errorMessage}
+                  </div>
+                )}
 
                 {/* Sub-steps & Extraction link */}
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-900">
